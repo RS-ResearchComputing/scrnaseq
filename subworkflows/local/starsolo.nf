@@ -7,8 +7,6 @@ include { GUNZIP }                      from '../../modules/nf-core/gunzip/main'
 include { STAR_GENOMEGENERATE }         from '../../modules/nf-core/star/genomegenerate/main'
 
 
-def multiqc_report    = []
-
 workflow STARSOLO {
     take:
     genome_fasta
@@ -54,12 +52,26 @@ workflow STARSOLO {
     )
     ch_versions = ch_versions.mix(STAR_ALIGN.out.versions)
 
+    raw_counts = STAR_ALIGN.out.raw_counts
+        .join(STAR_ALIGN.out.raw_velocyto, remainder: true)
+        .map{ meta, count, velocity -> {
+                return [meta + [input_type: 'raw'], velocity ? [count, velocity] : [count]]
+            }
+        }
+
+    filtered_counts = STAR_ALIGN.out.filtered_counts
+        .join(STAR_ALIGN.out.filtered_velocyto, remainder: true)
+        .map{ meta, count, velocity -> {
+                return [meta + [input_type: 'filtered'], velocity ? [count, velocity] : [count]]
+            }
+        }
+
     emit:
     ch_versions
     // get rid of meta for star index
     star_result     = STAR_ALIGN.out.tab
     star_counts     = STAR_ALIGN.out.counts
-    raw_counts      = STAR_ALIGN.out.raw_counts.map{ meta, files -> [meta + [input_type: 'raw'], files] }
-    filtered_counts = STAR_ALIGN.out.filtered_counts.map{ meta, files -> [meta + [input_type: 'filtered'], files] }
+    raw_counts      = raw_counts
+    filtered_counts = filtered_counts
     for_multiqc     = STAR_ALIGN.out.log_final.map{ meta, it -> it }
 }
