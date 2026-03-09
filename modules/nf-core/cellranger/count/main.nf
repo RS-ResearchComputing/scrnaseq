@@ -1,6 +1,6 @@
 process CELLRANGER_COUNT {
     tag "$meta.id"
-    label 'process_high'
+    label 'process_high_count'
 
     container "nf-core/cellranger:8.0.0"
 
@@ -22,6 +22,7 @@ process CELLRANGER_COUNT {
     }
     args = task.ext.args ?: ''
     prefix = task.ext.prefix ?: "${meta.id}"
+
     template "cellranger_count.py"
 
     stub:
