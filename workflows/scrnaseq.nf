@@ -22,6 +22,8 @@ include { GTF_GENE_FILTER                                   } from '../modules/l
 include { GUNZIP as GUNZIP_FASTA                            } from '../modules/nf-core/gunzip/main'
 include { GUNZIP as GUNZIP_GTF                              } from '../modules/nf-core/gunzip/main'
 include { H5AD_CONVERSION                                   } from '../subworkflows/local/h5ad_conversion'
+include { CELLBENDER_QC                                     } from '../modules/local/cellbender_qualitycontrol'
+include { FILTERING_DECISIONS                               } from '../modules/local/filteringdecisions'
 
 
 workflow SCRNASEQ {
@@ -274,7 +276,6 @@ workflow SCRNASEQ {
             meta, outs -> outs.findAll{ it -> it.name == "web_summary.html" }
         })
         ch_mtx_matrices = ch_mtx_matrices.mix( CELLRANGER_MULTI_ALIGN.out.cellrangermulti_mtx_raw, CELLRANGER_MULTI_ALIGN.out.cellrangermulti_mtx_filtered )
-
     }
 
     //
@@ -302,7 +303,37 @@ workflow SCRNASEQ {
         ch_h5ads = ch_h5ads.mix(
             H5AD_REMOVEBACKGROUND_BARCODES_CELLBENDER_ANNDATA.out.h5ad
         )
+
+        //
+        // MODULE: Run cellbender QC comparing raw and cellbender-filtered matrices
+        //
+        ch_cellbender_qc_input = ch_h5ads
+            .filter { meta, _h5ad -> meta.input_type == 'raw' }
+            .map    { meta, h5ad -> [ meta.id, meta, h5ad ] }
+            .join(
+                ch_h5ads
+                    .filter { meta, h5ad -> meta.input_type == 'cellbender_filter' }
+                    .map    { meta, h5ad -> [ meta.id, h5ad ] }
+            )
+            .map { _id, meta, raw_h5ad, cellbender_h5ad -> [ meta, raw_h5ad, cellbender_h5ad ] }
+        CELLBENDER_QC ( ch_cellbender_qc_input )
+
     }
+
+    //
+    // MODULE: Filtering decision violin plots from CellRanger raw and filtered h5 files
+    // ONLY WORKS WITH CELLRANGER it.name.endsWith('.h5') outputs NULL in other aligners
+    //
+    ch_join_matrices = ch_mtx_matrices
+        .filter { meta, files -> meta.input_type == 'raw' }
+        .map    { meta, files -> [ meta.id, files.find { it.name.endsWith('.h5') } ] }
+        .join(
+            ch_mtx_matrices
+                .filter { meta, files -> meta.input_type == 'filtered' }
+                .map    { meta, files -> [ meta.id, files.find { it.name.endsWith('.h5') } ] }
+        )
+        .map { id, raw_h5, filtered_h5 -> [ [id: id], raw_h5, filtered_h5 ] }
+    FILTERING_DECISIONS ( ch_join_matrices )
 
     //
     // SUBWORKFLOW: Concat samples and convert h5ad to other formats
